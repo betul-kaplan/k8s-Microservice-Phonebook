@@ -1,0 +1,323 @@
+step 1-image_for_web_server  içine Docker file oluştur.
+-docker build -t betuldurankaplan/webserver .  #dockerhub ' a gönderecek şekilde image oluşturuyorum.
+
+step 2-image_for_web_result-server  içine Docker file oluştur. 1. ile aynı.
+-docker build -t betuldurankaplan/resultserver .
+docker image ls # Bu komutla image 'larını gör.image larım hazır.
+
+step 3-docker login
+
+docker push betuldurankaplan/webserver
+betuldurankaplan/resultserver    # Artık image'larımı docker Hub ' a gönderdim.
+NOT:dockerhub şifremi değiştirdiysem . home dizininde .docker dosyamı silip yeniden docker login deyip
+ yeni user ve şifreyi girersem olur.
+
+step 4-msql pod gidince bilgilerim kaybolmamaıs için. PV ve PVC oluşturup ,PVC ' yi deployment ' bağlayacağım.
+4-a- mysql-pv.yaml oluştur. 
+kubectl apply -f mysql-pv.yaml #pv oluştu.
+k get pv # pv oluştuğunu gör.(Retain demek volume Ü silmiyor istersen sonra sen manuel silersin.
+avaible demek kullanılmaya hazır demek )
+4-b- mysql-pv-claim.yaml oluştur.Not: 3 şey PV ve PVC de aynı olmalı birbirini tutmalı.
+1-storageClassName 2-storage 3-accessModes
+kubectl apply -f mysql-pv-claim.yaml #pvc oluştu.
+k get pv,pvc # pvc oluştuğunu gör. PVC de görünen capacity PV nin capacity sidir!!!
+5- mysql-deployment.yaml yaz. bu dosyaları üç şekilde yazarım. 1-extension kullanarak 2- k8s doc ten bakarak 3- dry run ile yani terminale
+kubectl create deploy mysql --image=mysql:5.7 --port=3306(not: bu zaten default girmesem de olurdu)--dry-run=client #not:bu deployment oluşturmuyor.sadece simule ediyor.
+kubectl create deploy mysql --image=mysql:5.7 --port=3306 --dry-run=client -o yaml #yaml dosyası oluşturuyor.
+kubectl create deploy mysql --image=mysql:5.7 --port=3306 --dry-run=client -o yaml > mysql-deploy.yaml # verdiğim dosya ismine yaml 'ı yazıyor.
+sondaki status gibi bazı extra bilgiler var ister çıkar ister kalsın kullanırım ..
+DEĞİŞİKLİKLER -EKLEMELER:
+deployment yaml 'a volume eklemeliyim. bunun /var/lib/mysql olduğunu dockerhub da mysql doc 'den buldum.
+env leri giriyorum.mysql doc ten bakarak. passwordleri secret 'tan; gizli olmayan user ve database name 'i config map den aldıracağım
+6-kubectl apply -f mysql-deploy.yaml #bunu çalıştırınca deployment oluşur ve pv yi oluşturduğum "/mnt/data" da oluşur.
+yani pod ların çalıştığı worker node 'da mnt altında data klasörü oluşur.
+7-service.yaml yazarım. --dry-run ile yine oluştururum yaml dosyamı.ama deployment yaml dosyası için çalışan birşeyler olması gerekmezken,
+service yaml dosyamı --dry-run ile oluşturmam için ortada bir çalışan deployment'ın olamsı gerekiyor. 
+kubectl expose deploy/mysql --port=3306 --dry-run=client -o yaml > mysql-svc.yaml
+Fazlalıkları sildim.
+kubectl apply -f mysql-svc.yaml
+kubectl get svc # bu data olduğundan nodeport olması gerekmiyor dışarı açmıyorum.sadece cluster ip olsa yeter.
+8- webserver-deploy.yaml dosyasını hazırla.
+kubectl create deploy webserver-deploy --image=betuldurankaplan/webserver --port=80 --dry-run=client -o yaml > webserver-deploy.yaml
+bu dosyam oluşur. fazlalıkları çıkartıp env leri girip hazırlamış olurum.
+kubectl apply -f . (ya da dosyanın adı)
+k get po (podlarım running oldu)
+9-artık ortada deployment olduğuna göre service obje sini çalıştırabilirim. yani service obje si bir deployment olmadan çalışmaz.
+kubectl expose deploy webserver-deploy --port=80 --dry-run=client -o yaml > webserver-sevice.yaml
+not: selector kısımlerı pod ve serviclerin aynı olmalı ki service o poda hizmet verebilsin.
+tabi service 'e nodeport eklemeliyiz ki dışarı web i açabilelim.
+kubectl apply -f .(yada dosya adı)
+k get svc
+master yada worker ipalıp:30001 'den web sayfamı browserdan alırım artık /add eklersem ekleme /update ve /delete çıkar ama henüz search kısmı yok
+search kısmı result server K8s yaml dosyalarını yazıp onları da çalıştırınca alacağım.
+iki microservice in birincisi halloldu. şimdi sıra ikincide
+bunu görmeden diğerine geçmemeliyiz daha kolay hata ayıklanır.
+10-tekrar dry-run yapmıyacağım zaten bunlar neredeyse birbirinin aynısı sayılır .webserver yaml dosyalarını 
+aynı ile copy paste yap sonra webserver yazan yerleri resultserver ile değiştir ctrl+F ile hepsini aynı anda değiştir.
+sonra save et .yani:
+resultserver-deploy.yaml oluştur .webserver-deploy.yaml dosyasını aynen copy past isimleri değiştir.
+tabi image değiştiriyoruz ilki webserver image ından idi bu resultserver image ından.image lar ducker hub dan çekiyoruz.
+daha bu dosyaları yazmadan docker file ları oluşturup docker hub a push lamıştık.
+kubectl apply -f .(ya da dosya adı)
+k get pod  
+11-resultserver-service.yaml aynı şekilde webserver-service.yaml dosyasını copy past yap sadece isim ve port değiştir.
+port bunda 30002 yap .
+kubectl apply -f .
+k get po,deploy,svc
+12- artık ip:30002 ile uygulamanın diğer kısmını görüyoruz.
+13- artık yaml dosyalarını süsleyip geliştireceğiz. hassas bilgiler için secret ve config dosyaları yapacağız.
+passwordler için secret ,diğerleri için config yapacağız hepsini de secret dan aldırabilirim.
+YANİ .secret ve configmap dosyalarına sıra geldi.burada passwordler için bir secret dosyası,
+iki configap yazacağız .şart değil ama mysql ile server ların configmap ini ayırmışız .çünkü serverlarda 
+MYSQL_DATABASE_HOST 'un adı da var çünkü mysql'İ servera bağlamak için host un adını giriyoruz .
+örnek olsu diye de configmapleri ayırmışız okadaR
+ŞİMDİ DOSYALARI YAZ:
+mysql-secret.yaml' ı yazıyorum .gidip k8s den secret örneği alıp değiştiriyorum.
+password lerimi terminalde base64 de encode edip yazıyorum.
+echo -n "Pl123456" | base64
+not:secret yaml dosyasında, data yerine stringdata yazsaydık password lerin değelerini base64 'e' çevirmeden olduğu gibi yazardık
+tabi secretlar yazılınca deploy yaml larda "env" değil "envfrom" "secretRef" yazıp secret 'a refere ediyorduk.burada şu mühim.
+env leri işletim sistemindeki adıyla büyük harflerle yani posix formatta yazıyoruz
+14-configmap yaz. bir mysql bir server içim ayrı yazıyorum şart değil.
+k apply -f . (MÜHİM NOT): env leri secret lardan aldırdım daha önce yaml dosyalarında env ler direk
+yazılıydı . Ben mysql 'e volume bağladığım için volume bu şekilde yazılınca 
+yani volume bazı dataları aktardı bir değişiklik yaptığımda onları alamayabilir .volume de kalıyor bu datalar sonra değişiklik 
+yapılınca sıkıntı olabiliyo
+bir env değiştirdiğimde tekrar apply yapıldığında sıkıntı olmaması içinönce herşeyi silip
+yeniden apply etmekte fayda var.
+kubectl  delete -f .#daha önce oluşturmadığım dosyalar not found diyebilir sıkıntı değil .
+kubectl apply -f .
+hepsi yeniden oluştu.
+15-önce mysql sonra da şimdi server configmap.yaml yazıyorum.
+buraya diğerinden farklı olarak MYSQL_DATABASE_YAML(posix formatta)yazıp database host a verdiğim ismin aynısını yani mysql ,
+gireceğim.
+15- webserver deploy yaml dosyasında env leri envfrom dan config ve secret a refere edeceğim.
+16- Aynı şekilde result deploy yaml dosyasında env leri envfromdan config ve secret a refere edeceğim.
+k delete -f . #şimid config ve secrettan aldıracağım volume de daha önce data aktarıldığından önceki apply lardan
+ben de önce silip sonra yeniden apply diyorum burada bu sebeple. oluşmayan yeni oluşanlar için tabi not found 
+diyor ki normal yani sorun yok.
+k apply -f .
+k get secret,cm
+k get po,deploy,svc # hepsi running gözükmeli 1/1 şeklinde
+şimdi browserda dene uygulamayı al ve add delete vs yapıp dene.,
+
+17-ingress.yaml yaz. Bu ingress routing yaptırıyordu. şimdi iki servisim var routing yaptırır ama bunun çalışması
+için ccm(cloud controller maneger) lazım .çünkü bu cloud provider ile aramızda bir ara yüz gibi görev görüp 
+bizim istediğimiz şeyleri cloud da yapıyor mesela "load balancer " veya aws EBS de volume oluşturmak ya da 
+autoscaling gibi işlemlerin yapılmasını sağlıyor.bugün kurulumumuzda bu yok çalışmaz ama gerektiğinde yapabilmek için koyduk.
+Burada bi tane load balancer açıyorduk. bu bir service object olmadığından ingress ile routing yapabiliriz.
+ingress formatını kubernets Doc den alırım.tabi bu apply yapınca çalışmaz çünkü 
+İNGRESS CONTROLLER indirmemiz lazım. çünkü bütün objeler için zaten hatırlarsan control maneger var. default
+objeler için control maneger indirmiyoruz default var . ama başka ilave objectler kullanıyorsak kullandığımız
+objebnin kind neyse onu indirmemiz lazım. burada ingress kullanıyoruz .ozman ingress controler indirmem gerek.
+aslında kubernets de cm varya  yani controller maneger orada deployment ,service için replica için herşey için 
+controller lar var.
+
+NOT: ingres yapılınca service yaml da nodeport olmak zorunda değil. clusterip de olur.ama mesela tester lar için
+ortam açıyorsam ozaman nodeport açarım ki uygulamayı browserdan test edebilsinler ingress kullanmadan.
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/aws/deploy.yaml#videonun2.36. dakikasında 
+bu kod arkada ingress in objelerini çalıştırıyor ve onlar istediğimizi yapıyor.
+
+mesela;
+
+nginx in namespace ve bazı objeleri oluşuyor.istersen bu komuttan sonra şunları girersen bu objeleri görürsün.:
+k get ns
+k get all -n ingress-nginx
+
+şimdi ingress de çalışsın 
+k apply -f .
+k get ing # bununla oluşan ingress imi görüyorum.
+
+burada HOST kısmında tanıttığım domain name görünürdü.
+ADRESS de de cloud provider ımız olsaydı aws load balancer DNS i olacaktı.
+hatta burada" k get all -n ingress-nginx " komutu girince bize "service/ingress-nginx-controller "gösterir
+oradaki ip adresinden load balancerım olmadığı için burada curl komutu ile service lerimi görebilirim.
+curl http://10.......(nginx için verilen ip gir) ozaman sayfayı görürsün html formatında. 
+ip den sonra "/result"
+ yazarsan da result ı görürsün.
+ 2.42 de videoda kaldım.
+ ŞİMDİ HELM İLE KURMA
+
+1- önce helm kur.Helm  doc ten al
+curl  https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+2- helm version ile gör
+3- bu yazdığım yeml dosyalarını helm chartı haline getireceğiz. 
+önce;
+daha bir repomuz yok önce repo haline getireceğim
+helm create # bu komutla önce bir chart oluşturacak. o bize default bir dizin getirecek.
+bu default ile gelen template altına yaml dosyalarımızı koyacağız chart ımız oluşmuş olacak.
+sonra; bunu paketleyeceğim. tabi bunun için github kullanacaksam
+bir github repo oluşturacağım bunun için.
+helm repo index ile orası için bir index oluşturacağım.
+burdaki chartı ziplenmiş şekilde git push ile oraya göndereceğim index i de göndereceğim.
+artık bu repo Helm reposu olmuş olacak.
+daha sonra;
+helm repo add # bu komutla helm repoya ekleyeceğim.
+helm install #komutuyla da çalıştıracağım.
+
+komutlar:
+bu komutları yaml dosyalarının olduğu solution dosyasında yapMA !!!.dışına çıkıp yapalım.
+1-helm create phonebook-chart #default dosyalarla chart geldi . bunda gelen template dosyasının altındakileri
+ silip
+ kendimizinkini koyacağız.
+2-rm -r phonebook-chart/templates/*
+3-bütün yaml dosyalarımızı copy yapıp (ctrl ile beraber maus ile tektek üstlerine gidip tıklayıp
+seçiyorum.) hepsini copy ile kopyalıyorum.(linux copy command ile de yapabilirim) templates dosyasının altına past ediyorum.
+4-default chart da gelen values.yaml içeriğini siliyorum buraya kendi value lerımı koyacağım.
+buraya image larımı koyacağım.
+values.yaml 'ın içeriği:
+
+webserver_image: betuldurankaplan/webserver (hocanın image: olivercw/webserver )
+resultserver_image: betuldurankaplan/resultserver  (hocanın image: olivercw/resultserver )
+
+5-resultserver-deploy.yaml da image: kısmında artık values yaml dan aldıracağım,şöyle:
+resultserver.yaml içinde image:{{ .Values.resultserver_image}}
+not: isteyen bunu kendi iamge ı ile kullanarak ya da set parametresi ile image ı değiştirerek bunu kullanabilir.
+
+6-webserver-deploy.yaml da aynı şekilde image values.yaml dan aldıracağım .şöyle:
+webserver-deploy.yaml içinde image:{{ .Values.webserver_image}}
+
+7- bir de template altına NOTES.txt diye bir file oluştur ve içine bu helm chartı nasıl kullanılacağına dair notlar yaz.
+NOTES.txt  nin içerik örneği:
+helm doc te var.
+
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }}
+  $ helm get all {{ .Release.Name }}
+
+To use own images execute as below:
+
+helm upgrade --install phonebook-app phonebook-repo/phonebook-chart --set webserver_image=<image-name> --set resultserver_image=<image-name> 
+
+not : values.yaml da bu iki parametre girdiğim için bu ikisini set ettim.values de yazdıklarımı girebilirim
+
+ya da;
+
+helm install -f ile çalıştırırım .ozaman values.yaml  da kendi image larımı girerim ozaman bu komut yeter.
+
+8- cahart ım hazır, tempaltes ım hazır. NOTES.txt de hazır. şimdi paketlemeye sıra geldi.,
+9-bundan önce github a gidip bunun için bir public-repo oluşturuyorum.phonebook-helm-repo gibi bir isim veririm.
+sonra bunu tokenla beraber clone larım.
+
+-git clone https://<TOKEN>@<repodan aldığım clonelama linki>
+
+10-şimdi clone lama ile gelen repomun dosyasının içine cd  ile girip phonebook-chart ımızı buraya zip haliyle
+paketlenmiş haliyle göndereceğim.yani repom hazır, chart hazır. chartın paketlenmiş halini ve oluşturduğum index i
+ buraya koyacağım şöyle:
+
+-cd phonebook-helm-repo 
+
+11-helm package ../phonebook-chart/  # cloneladığım repomun içinde yapıyorum bu komutu.böylece paketleme yaptım.
+
+Chart.yaml da version 0.1.0 olduğundan bu versiyonla chart paketim geldi.
+bir github reposunun , helm repo olması için iki şartı vardı :
+1-paketlenmiş chartların içinde olması
+2-index olması lazım . bunun için 
+reponun içine önce helm package ile chartı koyduk sonra 
+
+-helm repo index . # diyerek bu repoda helm chartımın olduğu yere bunun indexini oluşturuyorum.
+yani bunu da reponun içindeyken yapıyorum.
+
+sonra
+
+-git add .
+-git commit -m "phonebook"
+isterse github git-credential leri gir
+-git push
+
+herşeyi silmiştik 
+-k get po #ile kontrol edebilirsin.
+şimdi bu oluşturduğum helm repoyu kullanacaksam önce ekleyeceğim.
+-helm repo add <repoya bir isim ver> <github helm repomun raw lı şekilde browserdan alıyorum /main yazan yer dahil,
+sonrasını kopyalayıp buraya yazıyorum.>
+yani;mesela şu şekilde yazıyorum
+-helm repo add app-repo https://raw.githubusercontent.com/betul-kaplan/phonebook-hel-repo/main
+NOT: raw alabilmek için repodaki dosyalardan herhangi birine basıp açmak gerek .orada raw tuşuna basmak gerek.
+ama /main ide alıyoruz sonrasını almıyoruz.
+
+-helm repo ls  #ile repomun eklendiğini görürüm.
+-helm install <bir isim ver> <önce repo adı>/<sonra chartın adı>
+NOTE: Chartların adını bilmiyorsam . 
+-helm search repo app-repo # bu şekilde chart ları görürüm.
+-ve chart ımı çalıştırıyorum .buna release denir.
+mesela şöyle ;
+
+-helm install apprelease app-repo/phonebook-chart
+
+bu şekilde chartı çalıştırmış oldum buna release diyoruz. release 'e bir isim vererek install ile bu şekilde çalıştırırım.
+yani;
+-helm install <release ismi> helm-repoadı/chart-adı # genel komut
+
+chart ım ve açıklama NOTES.txt içeriği notum geliyor.
+
+-k get pod,deploy,svc,pv,pvc # hepsine yeniden bakıyorum running olduğunu görüyorum.
+hatta aynı volume bağladığımız için hala aynı girdiğim data ları görebilirim.
+
+NOTE.
+çalışan app imin image larını 
+helm upgrade --install phonebook-app phonebook-repo/phonebook-chart --set webserver_image=<image-name> --set resultserver_image=<image-name> 
+ bu komutla değiştirebilirim.
+ mesela
+helm upgrade --install apprelease app-repo/phonebook-chart --set webserver_image=nginx --set resultserver_image=httpd  #(apache server) 
+
+bu şekilde yapınca image lar değiştiği için nginx ve apache default sayfaları gelir.
+bu şekilde dinamik hale getirdik image değişince başka bir şey geliyor.
+
+çalışan bütün k8s objelerimi silmek için yani release imi silmek için
+-helm ls #ile release imin adını gör 
+sonra;
+
+-helm delete <release adı> 
+burada 
+-helm delete apprelese
+-k get po # bu şekilde de terminate edildiğini gör.
+sonuç;
+helm repon varsa;
+İKİ KOMUTLA
+helm repo add
+helm repo install
+
+ile hemen basitçe çalıştırabilirim.
+
+
+
+
+ 
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+  
+
+ 
+
+
+
+
+
+
+
