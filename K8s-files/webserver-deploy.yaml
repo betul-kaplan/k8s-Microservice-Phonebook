@@ -15,7 +15,7 @@ spec:
         app: webserver-deploy
     spec:
       containers:
-      - image: olivercw/webserver
+      - image: betuldurankaplan/webserver
         name: webserver
         ports:
         - containerPort: 80
