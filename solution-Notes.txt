@@ -233,6 +233,7 @@ isterse github git-credential leri gir
 herşeyi silmiştik 
 -k get po #ile kontrol edebilirsin.
 şimdi bu oluşturduğum helm repoyu kullanacaksam önce ekleyeceğim.
+Eklemeyi yine clone ladığım repo da yapıyorum. yani clone ladığım reponun içindeyken helm repo add komutu giryorum.
 -helm repo add <repoya bir isim ver> <github helm repomun raw lı şekilde browserdan alıyorum /main yazan yer dahil,
 sonrasını kopyalayıp buraya yazıyorum.>
 yani;mesela şu şekilde yazıyorum
